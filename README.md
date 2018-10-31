@@ -5,6 +5,11 @@ Unit che permette di creare una Fattura Elettronica in formato XML
 utilizzando delle query ADO per estrarre i dati dal proprio database.
 
 Unit sviluppata per esportare documenti XML per il gestionale
-della DATA WARE SRL
+della DATA WARE SRL.
 
-# Http://www.data-ware.it
+# http://www.data-ware.it
+
+La pubblicazione ha lo scopo di condividere e supportare lo sviluppo della
+fatturazione elettronica per i gestionali scritti in Delphi XE2
+
+
