@@ -13,3 +13,4 @@ La pubblicazione ha lo scopo di condividere e supportare lo sviluppo della
 fatturazione elettronica per i gestionali scritti in Delphi XE2
 
 
+# https://github.com/scarfagna/FatturaElettronica-in-Delphi-XE2
