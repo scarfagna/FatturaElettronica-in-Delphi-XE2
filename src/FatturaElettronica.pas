@@ -2,21 +2,21 @@ unit FatturaElettronica;
 
 interface uses Vcl.Forms;
 
-function feGeneraFatturaElettronica(xmlFileName : string; owner : TForm; idDocumento : integer) : boolean;
+function feGeneraFatturaElettronica(xmlFileName : string; owner : TForm; idDocumento, progressivoInvio : integer) : boolean;
+
+implementation uses DatabaseCommon, XMLDoc, Xml.XMLIntf, Data.Win.ADODB, SysUtils, System.DateUtils, Vcl.Dialogs, System.Types, System.StrUtils, System.Math;
 
 
-implementation uses DatabaseCommon, XMLDoc, Xml.XMLIntf, Data.Win.ADODB, SysUtils, System.DateUtils, Vcl.Dialogs, System.Types, System.StrUtils;
-
-
-function feAddFatturaElettronicaHeader(const XMLDoc: IXMLDocument; const iNodoLiv0 : IXMLNode) : boolean; forward;
+function feAddFatturaElettronicaHeader(const XMLDoc: IXMLDocument; const iNodoLiv0 : IXMLNode; progressivoInvio : integer) : boolean; forward;
 function feAddFatturaElettronicaBody  (const XMLDoc: IXMLDocument; const iNodoLiv0 : IXMLNode) : boolean; forward;
 
 var
-  qryDatiImpresa    : TAdoQuery;
-  qryDocumento      : TAdoQuery;
-  qryDocumentoRighe : TAdoQuery;
-  qryTipoDocumento  : TAdoQuery;
-  qryAnagrafica     : TAdoQuery;
+  qryDatiImpresa           : TAdoQuery;
+  qryDocumento             : TAdoQuery;
+  qryDocumentoRighe        : TAdoQuery;
+  qryDocumentiDiTrasporto  : TAdoQuery;
+  qryTipoDocumento         : TAdoQuery;
+  qryAnagrafica            : TAdoQuery;
 
 
 // ********************************************************
@@ -28,53 +28,111 @@ var
 procedure feInitializeDBConnection;
 begin
   // ...
-  if qryDatiImpresa    <> nil then exit;
-  if qryDocumento      <> nil then exit;
-  if qryDocumentoRighe <> nil then exit;
-  if qryTipoDocumento  <> nil then exit;
-  if qryAnagrafica     <> nil then exit;
+  if qryDatiImpresa             <> nil then exit;
+  if qryDocumento               <> nil then exit;
+  if qryDocumentoRighe          <> nil then exit;
+  if qryDocumentiDiTrasporto    <> nil then exit;
+  if qryTipoDocumento           <> nil then exit;
+  if qryAnagrafica              <> nil then exit;
 
   // crea query ...
-  qryDatiImpresa                   := TAdoQuery.Create(nil);
-  qryDatiImpresa.connection        := dmDatabaseCommon.cnnSqlServer;
-  dmDatabaseCommon.cnnSqlServer.ConnectionString;
+  qryDatiImpresa                        := TAdoQuery.Create(nil);
+  qryDatiImpresa.connection             := dmDatabaseCommon.cnnSqlServer;
 
-  qryDocumento                     := TAdoQuery.Create(nil);
-  qryDocumento.connection          := dmDatabaseCommon.cnnSqlServer;
+  qryDocumento                          := TAdoQuery.Create(nil);
+  qryDocumento.connection               := dmDatabaseCommon.cnnSqlServer;
 
-  qryDocumentoRighe                := TAdoQuery.Create(nil);
-  qryDocumentoRighe.connection     := dmDatabaseCommon.cnnSqlServer;
+  qryDocumentoRighe                     := TAdoQuery.Create(nil);
+  qryDocumentoRighe.connection          := dmDatabaseCommon.cnnSqlServer;
 
-  qryTipoDocumento                 := TAdoQuery.Create(nil);
-  qryTipoDocumento.connection      := dmDatabaseCommon.cnnSqlServer;
+  qryDocumentiDiTrasporto               := TAdoQuery.Create(nil);
+  qryDocumentiDiTrasporto.connection    := dmDatabaseCommon.cnnSqlServer;
 
-  qryAnagrafica                    := TAdoQuery.Create(nil);
-  qryAnagrafica.connection         := dmDatabaseCommon.cnnSqlServer;
+  qryTipoDocumento                      := TAdoQuery.Create(nil);
+  qryTipoDocumento.connection           := dmDatabaseCommon.cnnSqlServer;
+
+  qryAnagrafica                         := TAdoQuery.Create(nil);
+  qryAnagrafica.connection              := dmDatabaseCommon.cnnSqlServer;
 end;
 
 procedure feFinalizeDBConnection;
 begin
   // ...
-  if qryDatiImpresa    = nil then exit;
-  if qryDocumento      = nil then exit;
-  if qryDocumentoRighe = nil then exit;
-  if qryTipoDocumento  = nil then exit;
-  if qryAnagrafica     = nil then exit;
+  if qryDatiImpresa             = nil then exit;
+  if qryDocumento               = nil then exit;
+  if qryDocumentoRighe          = nil then exit;
+  if qryDocumentiDiTrasporto    = nil then exit;
+  if qryTipoDocumento           = nil then exit;
+  if qryAnagrafica              = nil then exit;
 
   try
-    qryDatiImpresa   .close;
-    qryDocumento     .close;
-    qryDocumentoRighe.close;
-    qryTipoDocumento .close;
-    qryAnagrafica    .close;
+    qryDatiImpresa         .close;
+    qryDocumento           .close;
+    qryDocumentoRighe      .close;
+    qryDocumentiDiTrasporto.close;
+    qryTipoDocumento       .close;
+    qryAnagrafica          .close;
 
-    qryDatiImpresa   .free;
-    qryDocumento     .free;
-    qryDocumentoRighe.free;
-    qryTipoDocumento .free;
-    qryAnagrafica    .free;
+    qryDatiImpresa          .free;
+    qryDocumento            .free;
+    qryDocumentoRighe       .free;
+    qryDocumentiDiTrasporto .free;
+    qryTipoDocumento        .free;
+    qryAnagrafica           .free;
   except
   end;
+end;
+
+
+function feUtilFromCurrencyToString(value : currency) : string;
+
+var
+  tmp : string;
+
+begin
+  // ...
+  tmp := floatToStrF  (value, ffCurrency, 12, FormatSettings.CurrencyDecimals);
+  // toglie punti separatore migliaglia ...
+  tmp := stringreplace(tmp, '.',  '', [rfReplaceAll, rfIgnoreCase]);
+  // sostituisce separatore decimale da virgola a punto ...
+  tmp := stringreplace(tmp, ',', '.', [rfReplaceAll, rfIgnoreCase]);
+
+  // ...
+  result := trim(tmp);
+end;
+
+
+(* -----------------------------------------------
+   |                            |
+   ----------------------------------------------- *)
+
+function feUtilRoundDCurr(x: currency; d: integer): currency;
+  // RoundD(123.456, 0) = 123.00
+  // RoundD(123.456, 2) = 123.46
+  // RoundD(123456, -3) = 123000
+
+var
+  n: currency;
+
+begin
+  n := System.Math.IntPower(10, d);
+  x := x * n;
+
+  result := (Int(x) + Int(Frac(x) * 2)) / n;
+end;
+
+function feUtilArrNormaLegge(importo : currency) : currency;
+
+begin
+  // test
+  //  test := RoundDCurr(108.294, 2);  // 108,29
+  //  test := RoundDCurr( 42.155, 2);  //  42,16
+  //  test := RoundDCurr(20.5164, 2);  //  20,52
+  //  test := RoundDCurr(100.325, 2);  // 100,33
+  //  test := RoundDCurr(100.324, 2);  // 100,32
+
+  // ...
+  result := feUtilRoundDCurr(importo, 2);
 end;
 
 
@@ -87,11 +145,12 @@ var
 begin
   try
     // svuota query ...
-    qryDatiImpresa   .SQL.clear;
-    qryDocumento     .SQL.clear;
-    qryDocumentoRighe.SQL.clear;
-    qryTipoDocumento .SQL.clear;
-    qryAnagrafica    .SQL.clear;
+    qryDatiImpresa         .SQL.clear;
+    qryDocumento           .SQL.clear;
+    qryDocumentoRighe      .SQL.clear;
+    qryDocumentiDiTrasporto.SQL.clear;
+    qryTipoDocumento       .SQL.clear;
+    qryAnagrafica          .SQL.clear;
 
     // ...
     qryDatiImpresa   .SQL.add('SELECT * FROM TDatiImpresa');
@@ -102,29 +161,13 @@ begin
     qryDocumentoRighe.SQL.add('FROM TDocumentiRighe as A ');
     qryDocumentoRighe.SQL.add('LEFT JOIN TIva as B ');
     qryDocumentoRighe.SQL.add('ON A.CodIva = B.CodIva ');
-    qryDocumentoRighe.SQL.add('WHERE IDDocumento= ' + intToStr(idDocumento)+ ' ');
+    qryDocumentoRighe.SQL.add('WHERE IDDocumento = ' + intToStr(idDocumento) + ' ');
     qryDocumentoRighe.SQL.add('ORDER BY OrdinamentoRiga ');
 
-//    // documenti di trasporto
-//SELECT ID, TipoDocumento, IDAnagrafica, Data, Numero, Anno, [=== RIF. DOC ESTERNI ===], DataDocEsterni, NumDocEsterni, TTipiDocumento.NomeBreve
-//FROM   TDocumenti
-//
-//INNER JOIN TTipiDocumento
-//ON TDocumenti.TipoDocumento = TTipiDocumento.TipoDoc
-//
-//WHERE  InclusoInIDDoc IS NULL
-//  AND  IDAnagrafica   = :idAnagrafica
-//  AND  TipoDocumento in (
-//          SELECT DISTINCT TipoDoc
-//          FROM   TTipiDocumento
-//          WHERE  IncludibileIn LIKE :tipoDocumento
-//       )
-
-
     // ...
-    qryDatiImpresa   .active := true;
-    qryDocumento     .active := true;
-    qryDocumentoRighe.active := true;
+    qryDatiImpresa         .active := true;
+    qryDocumento           .active := true;
+    qryDocumentoRighe      .active := true;
 
     // ...
     idAnagrafica := qryDocumento.fieldByName('IDAnagrafica').asInteger;
@@ -138,8 +181,17 @@ begin
 
     // ...
     qryTipoDocumento .SQL.add('SELECT FatturaElettronicaTipoDocumento FROM TTipiDocumento WHERE TipoDoc=''' + tipoDocumento + '''');
+    // ...
     qryTipoDocumento .active := true;
 
+    // documenti di trasporto
+    qryDocumentiDiTrasporto.SQL.add('SELECT ID, TipoDocumento, IDAnagrafica, Data, Numero, Anno, InclusoInIDDoc');
+    qryDocumentiDiTrasporto.SQL.add('FROM   TDocumenti');
+    qryDocumentiDiTrasporto.SQL.add('');
+    qryDocumentiDiTrasporto.SQL.add('WHERE  InclusoInIDDoc = ' + intToStr(idDocumento) + ' ');
+    qryDocumentiDiTrasporto.SQL.add('  AND  IDAnagrafica   = ' + intToStr(idAnagrafica) + ' ');
+    // ...
+    qryDocumentiDiTrasporto.active := true;
   except
     on E : Exception do
       ShowMessage(E.ClassName+' error raised, with message : '+E.Message);
@@ -175,14 +227,19 @@ end;
 // ********************************************************
 
 
-function feGeneraFatturaElettronica(xmlFileName : string; owner : TForm; idDocumento : integer) : boolean;
+function feGeneraFatturaElettronica(xmlFileName : string; owner : TForm; idDocumento, progressivoInvio : integer) : boolean;
 
 var
   XMLDoc    : IXMLDocument;
 
 var
   // nodi
-  iNodoLiv0             : IXMLNode;
+  iNodoLiv0         : IXMLNode;
+
+  // ...
+  idFiscaleInviante : string;
+  numeroDocumento   : string;
+  tipoDocumento     : string;
 
 begin
   // ...
@@ -228,7 +285,7 @@ begin
     // Rappresentazione+tabellare+del+tracciato+fattura+ordinaria.xls
 
     // 1.1 ... 1.6
-    feAddFatturaElettronicaHeader(XMLDoc, iNodoLiv0);
+    feAddFatturaElettronicaHeader(XMLDoc, iNodoLiv0, progressivoInvio);
 
     // ======================================
     // BODY
@@ -259,7 +316,37 @@ begin
     //
     // ======================================
 
+    // id fiscale inviante
+    idFiscaleInviante := qryDatiImpresa.fieldByName('IdPaese').asString + qryDatiImpresa .fieldByName('PartitaIva').asString;
+
+    // 2.1.1.1   <TipoDocumento>
+    //  TD01		fattura                            FT
+    //  TD02		acconto/anticipo su fattura        AF
+    //  TD03		acconto/anticipo su parcella       AP
+    //  TD04		nota di credito                    NC
+    //  TD05		nota di debito                     ND
+    //  TD06		parcella                           PA
+    //  TD20		autofattura                        AU
+    tipoDocumento     := qryTipoDocumento.fieldByName('FatturaElettronicaTipoDocumento').asString;
+    
+    // da tipo documento a descrizione abbreviata comprensibile
+    if tipoDocumento = 'TD01' then tipoDocumento := 'FT' else
+    if tipoDocumento = 'TD02' then tipoDocumento := 'AF' else
+    if tipoDocumento = 'TD03' then tipoDocumento := 'AP' else
+    if tipoDocumento = 'TD04' then tipoDocumento := 'NC' else
+    if tipoDocumento = 'TD05' then tipoDocumento := 'ND' else
+    if tipoDocumento = 'TD06' then tipoDocumento := 'PA' else
+    if tipoDocumento = 'TD20' then tipoDocumento := 'AU';
+
+    // numero documento
+    numeroDocumento   := tipoDocumento + qryDocumento   .fieldByName('Numero').asString;;
+    // nome completo
+    xmlFileName       := idFiscaleInviante + '_' + numeroDocumento + '.xml';
+
+    // ...
     XMLDoc.saveToFile(xmlFileName);
+
+    // ...
     XMLDoc.active := False;
 
     // ======================================
@@ -282,7 +369,7 @@ end;
 //
 // ********************************************************
 
-function feAddFatturaElettronicaHeader_DatiTrasmissione(const iNodoLiv1: IXMLNode) : boolean;
+function feAddFatturaElettronicaHeader_DatiTrasmissione(const iNodoLiv1: IXMLNode; progressivoInvio : integer) : boolean;
 
 var
   // nodi
@@ -328,7 +415,7 @@ begin
 
   // 1.1.2   <ProgressivoInvio>
   iNodoLiv3               := iNodoLiv2.addChild('ProgressivoInvio');
-  dateTimeToString(tmp, 'yyyymmdd_hh:nn:ss', now);
+  tmp := intToStr(progressivoInvio);
   iNodoLiv3.Text          := tmp;
 
   //1.1.3   <FormatoTrasmissione>
@@ -472,7 +559,6 @@ begin
   // ======================================
 
   // 1.2.4   <IscrizioneREA>
-  iNodoLiv3               := iNodoLiv2.addChild('IscrizioneREA');
 end;
 
 
@@ -575,7 +661,7 @@ end;
 
 // https://stackoverflow.com/questions/8354658/how-to-create-xml-file-in-delphi
 
-function feAddFatturaElettronicaHeader(const XMLDoc: IXMLDocument; const iNodoLiv0 : IXMLNode) : boolean;
+function feAddFatturaElettronicaHeader(const XMLDoc: IXMLDocument; const iNodoLiv0 : IXMLNode; progressivoInvio : integer) : boolean;
 
 var
   // nodi
@@ -595,7 +681,7 @@ begin
   iNodoLiv0.ChildNodes.Add(iNodoLiv1);
 
   // 1.1   <DatiTrasmissione>
-  feAddFatturaElettronicaHeader_DatiTrasmissione (iNodoLiv1);
+  feAddFatturaElettronicaHeader_DatiTrasmissione (iNodoLiv1, progressivoInvio);
   // 1.2   <CedentePrestatore>
   feAddFatturaElettronicaHeader_CedentePrestatore(iNodoLiv1);
   // 1.3   <RappresentanteFiscale>
@@ -613,6 +699,9 @@ end;
 
 function feAddFatturaElettronicaBody_DatiGenerali(const iNodoLiv1: IXMLNode) : boolean;
 
+const
+  MSG_MANCA_TIPO_DOCUMENTO : string = 'Manca valorizzazione "tipo di documento" in tabella "TTipiDocumento".';
+
 var
   // nodi
   iNodoLiv2 : IXMLNode;
@@ -620,8 +709,11 @@ var
   iNodoLiv4 : IXMLNode;
   iNodoLiv5 : IXMLNode;
 
-  tmp             : string;
-  importoRitenuta : currency;
+  // ...
+  tmp       : string;
+  tmpc      : currency;
+
+  cnt       : integer;
 
 begin
   // Allegato+A+-+Specifiche+tecniche+vers+1.1_22062018
@@ -640,6 +732,7 @@ begin
 
   // 2.1.1   <DatiGeneraliDocumento>
   iNodoLiv3               := iNodoLiv2.addChild('DatiGeneraliDocumento');
+
   // 2.1.1.1   <TipoDocumento>
   //  TD01		fattura
   //  TD02		acconto/anticipo su fattura
@@ -650,8 +743,14 @@ begin
   //  TD20		autofattura
   iNodoLiv4               := iNodoLiv3.addChild('TipoDocumento');
   tmp                     := qryTipoDocumento.fieldByName('FatturaElettronicaTipoDocumento').asString;
+
+  if (tmp = '') then begin
+    messageDlg(MSG_MANCA_TIPO_DOCUMENTO , mtConfirmation, [mbYes, mbNo], 0);
+  end;
+
   assert(tmp <> '');
   iNodoLiv4.text          := tmp;
+
   // 2.1.1.2   <Divisa>
   iNodoLiv4               := iNodoLiv3.addChild('Divisa');
   tmp                     := 'EUR'; // attualmente prevediamo solo euro
@@ -675,10 +774,10 @@ begin
   // ======================================
 
   // importo ritenuta
-  importoRitenuta         := qryDocumento.fieldByName('TotRitAcconto').asCurrency;
+  tmpc := qryDocumento.fieldByName('TotRitAcconto').asCurrency;
 
   // controlla che vada valorizzato
-  if importoRitenuta <> 0.0 then begin
+  if tmpc <> 0.0 then begin
     // 2.1.1.5   <DatiRitenuta>
     iNodoLiv4               := iNodoLiv3.addChild('DatiRitenuta');
 
@@ -689,8 +788,8 @@ begin
 
     // 2.1.1.5.2   <ImportoRitenuta>				xs:decimal	Importo della ritenuta	formato numerico; i decimali vanno separati dall'intero con il carattere  '.' (punto)	<1.1>
     iNodoLiv5               := iNodoLiv3.addChild('ImportoRitenuta');
-    importoRitenuta         := qryDocumento.fieldByName('TotRitAcconto').asCurrency;
-    tmp                     := floattostrf(importoRitenuta, ffFixed, 4, 2);
+    tmpc                    := qryDocumento.fieldByName('TotRitAcconto').asCurrency;
+    tmp                     := feUtilFromCurrencyToString(tmpc);
     iNodoLiv5.text          := tmp;
 
     // 2.1.1.5.3   <AliquotaRitenuta>				xs:decimal	Aliquota (%) della ritenuta	formato numerico; i decimali vanno separati dall'intero con il carattere  '.' (punto)	<1.1>	4 … 6
@@ -727,10 +826,20 @@ begin
   // 2.1.1.8.2   <Percentuale>
   // 2.1.1.8.3   <Importo>
 
+  // ======================================
   // 2.1.1.9   <ImportoTotaleDocumento>
+  // ======================================
+
+  // 2.1.1.9   <ImportoTotaleDocumento>
+  iNodoLiv4       := iNodoLiv3.addChild('ImportoTotaleDocumento');
+  tmpc            := qryDocumento.fieldByName('TotDoc').asInteger;
+  tmp             := feUtilFromCurrencyToString(tmpc);
+  iNodoLiv4.text  := tmp;
+
   // 2.1.1.10   <Arrotondamento>
   // 2.1.1.11   <Causale>
   // 2.1.1.12   <Art73>
+
 
   // 2.1.2   <DatiOrdineAcquisto>
   // 2.1.2.1   <RiferimentoNumeroLinea>
@@ -743,61 +852,104 @@ begin
 
   // 2.1.6   <DatiFattureCollegate>
 
+  // ======================================
   // 2.1.8   <DatiDDT>							Blocco da valorizzare nei casi di fattura "differita" per indicare il documento con cui è stato consegnato il bene (gli elementi informativi del blocco possono essere ripetuti se la fattura fa riferimento a più consegne e quindi a più documenti di trasporto)
   // 2.1.8.1   <NumeroDDT>					xs:normalizedString	Numero del documento di trasporto
   // 2.1.8.2   <DataDDT>					xs:date	Data del documento di trasporto (secondo il formato ISO 8601:2004)
   // 2.1.8.3   <RiferimentoNumeroLinea>					xs:integer	Linea di dettaglio della fattura cui si riferisce il DDT  (non viene valorizzato  se il riferimento è all'intera fattura) (vedi elemento informativo 2.2.1.1 <NumeroLinea>)
+  // ======================================
 
   // ...
-//  qryDocumentoRighe.first;
-//  cnt := 0;
-//
-//  // per tutte le righe
-//  while not qryDocumentoRighe.eof do begin
-//
-//!    // ...
-//    qryDocumentoRighe.Next;
-//  end;
-//
+  qryDocumentiDiTrasporto.first;
+  cnt := 0;
 
-  // ======================================
-  // 1.1 <DatiTrasmissione>
-  // 1.1.2   <ProgressivoInvio>
-  // 1.1.3   <FormatoTrasmissione>
-  // 1.1.4   <CodiceDestinatario>
-  // ======================================
+  if (not qryDocumentiDiTrasporto.eof) then begin
+      // 2.1.8   <DatiDDT>
+      iNodoLiv4               := iNodoLiv3.addChild('DatiDDT');
 
-//  // 1.1.2   <ProgressivoInvio>
-//  iNodoLiv3               := iNodoLiv2.addChild('ProgressivoInvio');
-//  dateTimeToString(tmp, 'yyyymmdd_hh:nn:ss', now);
-//  iNodoLiv3.Text          := tmp;
-//
-//  //1.1.3   <FormatoTrasmissione>
-//  iNodoLiv3               := iNodoLiv2.addChild('FormatoTrasmissione');
-//  iNodoLiv3.Text          := 'FPR12'; // invio fra privati
-//
-//  //1.1.4   <CodiceDestinatario>
-//  iNodoLiv3               := iNodoLiv2.addChild('CodiceDestinatario');
-//  iNodoLiv3.Text          := '0000000'; // uso la PEC del destinatario
+      // per tutte le righe
+      while not qryDocumentiDiTrasporto.eof do begin
+        // ...
+        inc(cnt);
+
+        // 2.1.8.1   <NumeroDDT>					xs:normalizedString	Numero del documento di trasporto
+        iNodoLiv5               := iNodoLiv4.addChild('NumeroDDT');
+        tmp                     := qryDocumentiDiTrasporto.fieldByName('Numero').asString;
+        iNodoLiv5.text          := tmp;
+
+        // 2.1.8.2   <DataDDT>					        xs:date	                Data del documento di trasporto (secondo il formato ISO 8601:2004)
+        // formato ISO 8601:2004, con la  precisione seguente:   YYYY-MM-DD
+        iNodoLiv5               := iNodoLiv4.addChild('DataDDT');
+        tmp                     := formatdatetime('YYYY-MM-DD', qryDocumento.fieldByName('Data').asDateTime);
+        iNodoLiv5.text          := tmp;
+
+        // 2.1.8.3   <RiferimentoNumeroLinea>				xs:integer	        Linea di dettaglio della fattura cui si riferisce il DDT
+        // (non viene valorizzato  se il riferimento è all'intera fattura) (vedi elemento informativo 2.2.1.1 <NumeroLinea>)
+
+        // ...
+        qryDocumentiDiTrasporto.Next;
+      end;
+  end;
 end;
 
 function feAddFatturaElettronicaBody_DatiBeniServizi(const iNodoLiv1: IXMLNode) : boolean;
 
+type
+  // dati per il calcolo dell' IVA
+  TTabellaCurrency = array [0 .. 100] of currency;
+  TTabellaIVAUsate = array [0 .. 100] of boolean;
+
 var
   // nodi
-  iNodoLiv2 : IXMLNode;
-  iNodoLiv3 : IXMLNode;
-  iNodoLiv4 : IXMLNode;
-  iNodoLiv5 : IXMLNode;
+  iNodoLiv2     : IXMLNode;
+  iNodoLiv3     : IXMLNode;
+  iNodoLiv4     : IXMLNode;
+  iNodoLiv5     : IXMLNode;
   iNodoLiv5Tipo : IXMLNode;
 
-  tmp       : string;
-  tmpc      : currency;
-  tmpd      : double;
+  // calcolo iva
+  tabellaNetto            : TTabellaCurrency;
+  tabellaIvato            : TTabellaCurrency;
+  tabellaIvaIndetraibile  : TTabellaCurrency;
+  tabellaIVAUsate         : TTabellaIVAUsate;
 
-  cnt       : integer;
+  // ...
+  precentualeIva          : integer;
+  importoNettoRiga        : currency;
+  importoIvatoRiga        : currency;
+  importoIvaNonDetraibile : currency;
 
+  // ...
+  tmp           : string;
+  tmpc          : currency;
+  tmpd          : double;
+
+  cnt           : integer;
+  cntIva        : integer;
+
+  fSettings :TFormatSettings;
 begin
+//  fSettings := TFormatSettings.Create('it-IT');
+//
+//  fSettings.ThousandSeparator := '';
+//  fSettings.DecimalSeparator  := '.';
+
+  // ===========================================
+  // azzera tabelle totale per tipo di iva
+  // ===========================================
+
+  // svuota tabella IVA
+  fillchar(tabellaNetto          ,      sizeof(tabellaNetto          ) , #0);
+  fillchar(tabellaIvato          ,      sizeof(tabellaIvato          ) , #0);
+  fillchar(tabellaIvaIndetraibile,      sizeof(tabellaIvaIndetraibile) , #0);
+
+  // azzera flag tabella IVA usata
+  fillchar(tabellaIVAUsate, sizeof(tabellaIVAUsate), #0);
+
+  // ===========================================
+  // fattura elettronica
+  // ===========================================
+
   // Allegato+A+-+Specifiche+tecniche+vers+1.1_22062018
   // PG 47 - 52
 
@@ -882,7 +1034,9 @@ begin
 
     // 2.2.1.5   <Quantita>
     iNodoLiv4               := iNodoLiv3.addChild('Quantita');
-    tmp                     := qryDocumentoRighe.fieldByName('Quantita').asString;
+    tmpd                    := qryDocumentoRighe.fieldByName('Quantita').asFloat;
+    tmp                     := floattostrf(tmpd, ffFixed, 4, 2);
+    tmp                     := stringreplace(tmp, ',', '.', [rfReplaceAll, rfIgnoreCase]);
     iNodoLiv4.text          := tmp;
 
     // 2.2.1.6   <UnitaMisura>
@@ -900,12 +1054,12 @@ begin
 
       // 2.2.1.7   <DataInizioPeriodo>
       iNodoLiv4               := iNodoLiv3.addChild('DataInizioPeriodo');
-      tmp                     := qryDocumentoRighe.fieldByName('PeriodoDataInizio').asString;
+      tmp                     := formatdatetime('YYYY-MM-DD', qryDocumentoRighe.fieldByName('PeriodoDataInizio').asDateTime);
       iNodoLiv4.text          := tmp;
 
       // 2.2.1.8   <DataFinePeriodo>
       iNodoLiv4               := iNodoLiv3.addChild('DataFinePeriodo');
-      tmp                     := qryDocumentoRighe.fieldByName('PeriodoDataFine').asString;
+      tmp                     := formatdatetime('YYYY-MM-DD', qryDocumentoRighe.fieldByName('PeriodoDataFine').asDateTime);
       iNodoLiv4.text          := tmp;
     end;
 
@@ -916,9 +1070,8 @@ begin
     // 2.2.1.9   <PrezzoUnitario>
     iNodoLiv4               := iNodoLiv3.addChild('PrezzoUnitario');
     tmpc                    := qryDocumentoRighe.fieldByName('PrezzoNetto').asCurrency;
-    tmp                     := floattostrf(tmpc, ffFixed, 4, 2);
-    tmp                     := stringreplace(tmp, ',', '.', [rfReplaceAll, rfIgnoreCase]);
-    iNodoLiv4.text          := tmp;
+    tmp                     := feUtilFromCurrencyToString(tmpc);
+    iNodoLiv4.text          := trim(tmp);
 
     // ======================================
     // 2.2.1.10   <ScontoMaggiorazione>
@@ -959,8 +1112,7 @@ begin
       iNodoLiv5               := iNodoLiv4.addChild('Importo');
       tmpc                    := qryDocumentoRighe.fieldByName('PrezzoNetto').asCurrency;
       tmpc                    := tmpc * tmpd / 100;
-      tmp                     := floattostrf(tmpc, ffFixed, 4, 2);
-      tmp                     := stringreplace(tmp, ',', '.', [rfReplaceAll, rfIgnoreCase]);
+      tmp                     := feUtilFromCurrencyToString(tmpc);
       iNodoLiv5.text          := tmp;
     end;
 
@@ -971,8 +1123,7 @@ begin
     // 2.2.1.11   <PrezzoTotale>
     iNodoLiv4               := iNodoLiv3.addChild('PrezzoTotale');
     tmpc                    := qryDocumentoRighe.fieldByName('ImportoNettoRiga').asCurrency;
-    tmp                     := floattostrf(tmpc, ffFixed, 4, 2);
-    tmp                     := stringreplace(tmp, ',', '.', [rfReplaceAll, rfIgnoreCase]);
+    tmp                     := feUtilFromCurrencyToString(tmpc);
     iNodoLiv4.text          := tmp;
 
     // 2.2.1.12   <AliquotaIVA>
@@ -981,6 +1132,18 @@ begin
     tmp                     := floattostrf(tmpd, ffFixed, 4, 2);
     tmp                     := stringreplace(tmp, ',', '.', [rfReplaceAll, rfIgnoreCase]);
     iNodoLiv4.text          := tmp;
+
+    // aggiorna percentuale iva
+    precentualeIva          := qryDocumentoRighe.fieldByName('PercIva').asInteger;
+    importoNettoRiga        := qryDocumentoRighe.fieldByName('ImportoNettoRiga').asCurrency;
+    importoIvatoRiga        := qryDocumentoRighe.fieldByName('ImportoIvatoRiga').asCurrency;
+    importoIvaNonDetraibile := qryDocumentoRighe.fieldByName('IvaNonDetraibileRiga').asCurrency;
+
+    // assegna valore alla casella iva utilizzata
+    tabellaNetto          [precentualeIva] := tabellaNetto          [precentualeIva] + importoNettoRiga;
+    tabellaIvato          [precentualeIva] := tabellaIvato          [precentualeIva] + importoIvatoRiga;
+    tabellaIvaIndetraibile[precentualeIva] := tabellaIvaIndetraibile[precentualeIva] + importoIvaNonDetraibile;
+    tabellaIVAUsate       [precentualeIva] := true;
 
     // ======================================
     // 2.2.1.13   <Ritenuta>
@@ -998,13 +1161,21 @@ begin
     // 2.2.1.14   <Natura>
     // ======================================
 
+    // N1 escluse ex art. 15
+    // N2 non soggette
+    // N3 non imponibili
+    // N4 esenti
+    // N5 regime del margine / IVA non esposta in fattura
+    // N6 inversione contabile (per le operazioni in reverse charge ovvero nei casi di autofatturazione per acquisti extra UE di servizi ovvero per importazioni di beni nei soli casi previsti)
+    // N7 IVA assolta in altro stato UE (vendite a distanza ex art. 40 c. 3 e 4 e art. 41 c. 1 lett. b,  DL 331/93; prestazione di servizi di telecomunicazioni, tele-radiodiffusione ed elettronici ex art. 7-sexies lett. f, g, art. 74-sexies DPR 633/72)
+
     tmpd                    := qryDocumentoRighe.fieldByName('PercIva').asFloat;
 
     // se iva indicata è 0.0 indicare la "natura" della motiviazione
     if tmpd = 0.0 then begin
       // 2.2.1.14   <Natura>
       iNodoLiv4               := iNodoLiv3.addChild('Natura');
-      tmp                     := qryDocumentoRighe.fieldByName('Natura').asString;
+      tmp                     := 'N4'; // uso questo non sapendo cosa altro usare
       iNodoLiv4.text          := tmp;
     end;
 
@@ -1024,6 +1195,88 @@ begin
     qryDocumentoRighe.Next;
   end;
 
+
+  // ===========================================
+  // arrotonda totali
+  // ===========================================
+
+  // arrotonda gli importo al 2° decimale secondo norme di legge
+  for cnt := 0 to 100 do begin
+    if tabellaIVAUsate[cnt] then begin
+      tabellaNetto          [cnt] := feUtilArrNormaLegge(tabellaNetto          [cnt]);
+      tabellaIvato          [cnt] := feUtilArrNormaLegge(tabellaIvato          [cnt]);
+      tabellaIvaIndetraibile[cnt] := feUtilArrNormaLegge(tabellaIvaIndetraibile[cnt]);
+    end;
+  end;
+
+  // ======================================
+  // 2.2   <DatiBeniServizi>
+  // 2.2.2   <DatiRiepilogo>
+  // ======================================
+
+  // visualizza dati
+  for cntIva := 0 to 100 do begin
+    // iva usata ?
+    if (tabellaIVAUsate[cntIva]) and (tabellaNetto[cntIva] <> 0) then begin
+
+      // ...
+      inc(cnt);
+
+      // 2.2.2   <DatiRiepilogo>
+      iNodoLiv3               := iNodoLiv2.addChild('DatiRiepilogo');
+
+      // 2.2.2.1   <AliquotaIVA>
+      iNodoLiv4               := iNodoLiv3.addChild('AliquotaIVA');
+      tmpd                    := cntIva;
+      tmp                     := floattostrf(tmpd, ffFixed, 4, 2);
+      tmp                     := stringreplace(tmp, '.', '', [rfReplaceAll, rfIgnoreCase]);
+      tmp                     := stringreplace(tmp, ',', '.', [rfReplaceAll, rfIgnoreCase]);
+      iNodoLiv4.text          := tmp;
+
+      // 2.2.2.2   <Natura>
+      // N1 escluse ex art. 15
+      // N2 non soggette
+      // N3 non imponibili
+      // N4 esenti
+      // N5 regime del margine / IVA non esposta in fattura
+      // N6 inversione contabile (per le operazioni in reverse charge ovvero nei casi di autofatturazione per acquisti extra UE di servizi ovvero per importazioni di beni nei soli casi previsti)
+      // N7 IVA assolta in altro stato UE (vendite a distanza ex art. 40 c. 3 e 4 e art. 41 c. 1 lett. b,  DL 331/93; prestazione di servizi di telecomunicazioni, tele-radiodiffusione ed elettronici ex art. 7-sexies lett. f, g, art. 74-sexies DPR 633/72)
+      if (cntIva= 0) then begin
+        // ...
+        iNodoLiv4               := iNodoLiv3.addChild('Natura');
+        tmp                     := 'N4'; // uso questo non sapendo cosa altro usare
+        iNodoLiv4.text          := tmp;
+      end;
+
+      // 2.2.2.5   <ImponibileImporto>
+      iNodoLiv4               := iNodoLiv3.addChild('ImponibileImporto');
+      tmpc                    := tabellaNetto[cntIva];
+      tmp                     := feUtilFromCurrencyToString(tmpc);
+      iNodoLiv4.text          := tmp;
+
+      // 2.2.2.6   <Imposta>
+      iNodoLiv4               := iNodoLiv3.addChild('Imposta');
+      tmpc                    := tabellaIvato[cntIva] - tabellaNetto[cntIva];
+      tmp                     := feUtilFromCurrencyToString(tmpc);
+      iNodoLiv4.text          := tmp;
+
+      // 2.2.2.7   <EsigibilitaIVA>
+      // "valori ammessi:
+      // [I]: IVA ad esigibilità immediata
+      // [D]: IVA ad esigibilità differita
+      // [S]: scissione dei pagamenti"
+      if (cntIva <> 0) then begin
+        iNodoLiv4               := iNodoLiv3.addChild('EsigibilitaIVA');
+        tmp                     := 'I'; // usiamo IMMEDIATA
+        iNodoLiv4.text          := tmp;
+      end;
+
+      // 2.2.2.8   <RiferimentoNormativo>
+      iNodoLiv4               := iNodoLiv3.addChild('RiferimentoNormativo');
+      tmp                     := 'Esente';
+      iNodoLiv4.text          := tmp;
+    end;
+  end;
 end;
 
 // https://stackoverflow.com/questions/8354658/how-to-create-xml-file-in-delphi
@@ -1064,11 +1317,13 @@ end;
 
 initialization begin
   try
-    qryDatiImpresa    := nil;
-    qryDocumento      := nil;
-    qryDocumentoRighe := nil;
-    qryTipoDocumento  := nil;
-    qryAnagrafica     := nil;
+    qryDatiImpresa              := nil;
+    qryDocumento                := nil;
+    qryDocumentoRighe           := nil;
+    qryTipoDocumento            := nil;
+    qryAnagrafica               := nil;
+    qryDocumentiDiTrasporto     := nil;
+
   except
   end;
 end;
