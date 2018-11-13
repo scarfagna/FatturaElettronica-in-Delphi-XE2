@@ -12,5 +12,10 @@ della DATA WARE SRL.
 La pubblicazione ha lo scopo di condividere e supportare lo sviluppo della
 fatturazione elettronica per i gestionali scritti in Delphi XE2
 
-
 # https://github.com/scarfagna/FatturaElettronica-in-Delphi-XE2
+
+Test superati dal file XML
+
+https://fatturaelettronica.infocamere.it
+
+Il file viene accettato ed inserito tra i file pronti per essere inviati.
